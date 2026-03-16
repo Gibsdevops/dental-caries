@@ -7,9 +7,7 @@ import time
 from typing import List
 import uvicorn
 import os
-
-# Use TensorFlow Lite Runtime
-import tflite_runtime.interpreter as tflite
+import tensorflow as tf
 
 app = FastAPI(
     title="Dental Caries Detection API",
@@ -28,13 +26,13 @@ app.add_middleware(
 MODEL_PATH = "models/dental_caries_model.tflite"
 
 def load_tflite_model(model_path):
-    """Load TensorFlow Lite model"""
+    """Load TensorFlow Lite model using TensorFlow"""
     if not os.path.exists(model_path):
         print(f"✗ Model file not found at {model_path}")
         return None
     
     try:
-        interpreter = tflite.Interpreter(model_path=model_path)
+        interpreter = tf.lite.Interpreter(model_path=model_path)
         interpreter.allocate_tensors()
         print(f"✓ TFLite model loaded successfully")
         return interpreter
@@ -142,7 +140,7 @@ async def model_info():
             "Healthy": "Healthy teeth without caries"
         },
         "confidence_threshold": CONFIDENCE_THRESHOLD,
-        "framework": "TensorFlow Lite Runtime",
+        "framework": "TensorFlow Lite",
         "training_data": "Dental X-rays from Zenodo dataset",
         "input_shape": list(input_shape) if input_shape is not None else None,
         "output_shape": list(output_details[0]['shape']) if output_details else None
