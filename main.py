@@ -26,7 +26,7 @@ app.add_middleware(
 )
 
 # Load your trained TensorFlow Lite model
-MODEL_PATH = "models/dental_caries_model.tflite"  # Change to your .tflite model path
+MODEL_PATH = "models/dental_caries_detection.tflite"  # Change to your .tflite model path
 
 def load_tflite_model(model_path):
     """Load TensorFlow Lite model"""
