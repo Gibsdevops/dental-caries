@@ -8,6 +8,7 @@ from typing import List
 import uvicorn
 import os
 import tensorflow as tf
+import traceback
 
 app = FastAPI(
     title="Dental Caries Detection API",
@@ -38,6 +39,7 @@ def load_tflite_model(model_path):
         return interpreter
     except Exception as e:
         print(f"✗ Error loading TFLite model: {e}")
+        traceback.print_exc()
         return None
 
 interpreter = load_tflite_model(MODEL_PATH)
@@ -49,21 +51,27 @@ input_shape = None
 input_dtype = None
 
 if interpreter:
-    input_details = interpreter.get_input_details()
-    output_details = interpreter.get_output_details()
-    
-    input_shape = input_details[0]['shape']
-    IMAGE_SIZE = (input_shape[1], input_shape[2])
-    input_dtype = input_details[0]['dtype']
-    
-    print(f"✓ Input shape: {input_shape}")
-    print(f"✓ Output shape: {output_details[0]['shape']}")
+    try:
+        input_details = interpreter.get_input_details()
+        output_details = interpreter.get_output_details()
+        
+        input_shape = input_details[0]['shape']
+        IMAGE_SIZE = (input_shape[1], input_shape[2])
+        input_dtype = input_details[0]['dtype']
+        
+        print(f"✓ Input shape: {input_shape}")
+        print(f"✓ Output shape: {output_details[0]['shape']}")
+        print(f"✓ Input dtype: {input_dtype}")
+    except Exception as e:
+        print(f"✗ Error getting model details: {e}")
+        traceback.print_exc()
+        IMAGE_SIZE = (224, 224)
+        input_dtype = np.float32
 else:
     IMAGE_SIZE = (224, 224)
     input_dtype = np.float32
 
 MODEL_VERSION = "1.0.0"
-# Binary classification: 0 = Caries, 1 = Healthy
 CLASS_LABELS = ["Caries", "Healthy"]
 CONFIDENCE_THRESHOLD = 0.5
 
@@ -72,17 +80,28 @@ def preprocess_image(image_bytes: bytes) -> np.ndarray:
     """Preprocess image - matches training pipeline"""
     try:
         image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
+        print(f"✓ Image opened, size: {image.size}")
+        
         image = image.resize(IMAGE_SIZE)
+        print(f"✓ Image resized to: {IMAGE_SIZE}")
+        
         image_array = np.array(image, dtype=np.float32)
+        print(f"✓ Image converted to array, shape: {image_array.shape}")
         
         # Normalize and preprocess for MobileNetV2
-        # This matches: tf.keras.applications.mobilenet_v2.preprocess_input(x)
         image_array = image_array / 127.5 - 1.0
+        print(f"✓ Image normalized, range: [{image_array.min():.2f}, {image_array.max():.2f}]")
         
         image_array = np.expand_dims(image_array, axis=0)
+        print(f"✓ Batch dimension added, shape: {image_array.shape}")
+        
         image_array = image_array.astype(input_dtype)
+        print(f"✓ Image dtype converted to: {input_dtype}")
+        
         return image_array
     except Exception as e:
+        print(f"✗ Error in preprocess_image: {e}")
+        traceback.print_exc()
         raise ValueError(f"Error preprocessing image: {str(e)}")
 
 
@@ -90,17 +109,29 @@ def run_inference(image_array: np.ndarray) -> float:
     """Run inference - returns probability of caries (0-1)"""
     if interpreter is None:
         raise ValueError("Model not loaded")
+    
     try:
+        print(f"Input array shape: {image_array.shape}, dtype: {image_array.dtype}")
+        print(f"Input details: {input_details[0]}")
+        
         interpreter.set_tensor(input_details[0]['index'], image_array)
+        print(f"✓ Input tensor set")
+        
         interpreter.invoke()
+        print(f"✓ Model inference completed")
+        
         output_data = interpreter.get_tensor(output_details[0]['index'])
+        print(f"✓ Output data retrieved, shape: {output_data.shape}, dtype: {output_data.dtype}")
+        print(f"✓ Output data: {output_data}")
         
         # Extract the probability (sigmoid output)
-        # output_data shape: [1, 1] for binary classification
         caries_probability = float(output_data.flatten()[0])
+        print(f"✓ Caries probability: {caries_probability}")
         
         return caries_probability
     except Exception as e:
+        print(f"✗ Error in run_inference: {e}")
+        traceback.print_exc()
         raise ValueError(f"Error during inference: {str(e)}")
 
 
@@ -155,6 +186,10 @@ async def predict(file: UploadFile = File(...)):
     """
     start_time = time.time()
     try:
+        print(f"\n=== NEW PREDICTION REQUEST ===")
+        print(f"Filename: {file.filename}")
+        print(f"Content type: {file.content_type}")
+        
         if interpreter is None:
             raise HTTPException(status_code=503, detail="Model not loaded")
         
@@ -162,6 +197,8 @@ async def predict(file: UploadFile = File(...)):
             raise HTTPException(status_code=400, detail="Invalid file type. Only JPEG and PNG allowed.")
         
         image_bytes = await file.read()
+        print(f"Image bytes read: {len(image_bytes)} bytes")
+        
         if not image_bytes:
             raise HTTPException(status_code=400, detail="Empty file")
         
@@ -177,6 +214,9 @@ async def predict(file: UploadFile = File(...)):
             confidence = 1 - caries_probability
         
         processing_time = time.time() - start_time
+        
+        print(f"✓ Prediction successful: {prediction} ({confidence:.4f})")
+        print(f"=== END PREDICTION REQUEST ===\n")
         
         return {
             "success": True,
@@ -197,8 +237,12 @@ async def predict(file: UploadFile = File(...)):
             "processing_time_ms": round(processing_time * 1000, 2)
         }
     except ValueError as ve:
+        print(f"✗ ValueError: {ve}")
+        traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
+        print(f"✗ Unexpected error: {e}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
 
 
@@ -243,6 +287,8 @@ async def predict_batch(files: List[UploadFile] = File(...)):
                     }
                 })
             except Exception as e:
+                print(f"✗ Error processing file {idx}: {e}")
+                traceback.print_exc()
                 errors.append({"file_index": idx, "filename": file.filename, "error": str(e)})
         
         return {
@@ -255,6 +301,8 @@ async def predict_batch(files: List[UploadFile] = File(...)):
             "processing_time_ms": round((time.time() - start_time) * 1000, 2)
         }
     except Exception as e:
+        print(f"✗ Batch error: {e}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
