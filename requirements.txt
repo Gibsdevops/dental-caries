@@ -1,0 +1,7 @@
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+pillow==10.1.0
+numpy==2.0.2
+tensorflow==2.19.0
+python-dotenv==1.0.0
