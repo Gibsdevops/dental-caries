@@ -24,7 +24,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-MODEL_PATH = "models/dental_caries_model.tflite"
+MODEL_PATH = "models/dental_caries_detection.tflite"
 
 def load_tflite_model(model_path):
     """Load TensorFlow Lite model using TensorFlow"""
